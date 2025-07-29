@@ -391,7 +391,13 @@
             
             const html = `
                 <div class="header">
-                    <span class="pet-emoji">${getSafeValue(data, 'petEmoji', '🐕')}</span>
+                    ${data.petPhotoBase64 ? `
+                        <img src="data:image/jpeg;base64,${data.petPhotoBase64}" 
+                             alt="${getSafeValue(data, 'petName')}"
+                             style="width: 120px; height: 120px; border-radius: 50%; object-fit: cover; margin-bottom: 15px; border: 3px solid white; box-shadow: 0 4px 12px rgba(0,0,0,0.3);" />
+                    ` : `
+                        <span class="pet-emoji">${getSafeValue(data, 'petEmoji', '🐕')}</span>
+                    `}
                     <h1 class="pet-name">${getSafeValue(data, 'petName', 'Неизвестный питомец')}</h1>
                     <p class="pet-details">${getSafeValue(data, 'petBreed', 'Неизвестная порода')} • ${getSafeValue(data, 'petAge', 'Возраст не указан')} • ${getSafeValue(data, 'petWeight', 'Вес не указан')}</p>
                 </div>
