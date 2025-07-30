@@ -533,19 +533,41 @@
             await loadWithRetry(petId);
         }
 
-        // Функция загрузки с повторными попытками
-        async function loadWithRetry(petId, maxRetries = 3, delay = 2000) {
-            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        // Гибридная функция загрузки: GitHub Pages + Raw GitHub + Fallback  
+        async function loadWithRetry(petId) {
+            const sources = [
+                {
+                    name: 'GitHub Pages (локальный)',
+                    url: `pets/${petId}.json?v=${Date.now()}`,
+                    timeout: 3000
+                },
+                {
+                    name: 'Raw GitHub (свежие файлы)', 
+                    url: `https://raw.githubusercontent.com/winkdogg/dog-trainer-qr/main/pets/${petId}.json?v=${Date.now()}`,
+                    timeout: 5000
+                },
+                {
+                    name: 'GitHub Pages (повторная попытка)',
+                    url: `pets/${petId}.json?v=${Date.now()}`,
+                    timeout: 5000
+                }
+            ];
+
+            for (let i = 0; i < sources.length; i++) {
+                const source = sources[i];
+                
                 try {
-                    console.log(`Попытка загрузки ${attempt}/${maxRetries} для ${petId}`);
+                    console.log(`🔄 Попытка ${i + 1}/${sources.length}: ${source.name}`);
+                    updateLoadingProgress(i + 1, sources.length);
+                    updateLoadingText(`Загрузка из: ${source.name}`);
                     
-                    // Показываем прогресс
-                    updateLoadingProgress(attempt, maxRetries);
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), source.timeout);
                     
-                    // Добавляем timestamp для избежания кеширования
-                    const cacheBuster = `?v=${Date.now()}`;
-                    const response = await fetch(`pets/${petId}.json${cacheBuster}`, {
+                    const response = await fetch(source.url, {
+                        signal: controller.signal,
                         cache: 'no-cache',
+                        mode: source.url.startsWith('https://raw.') ? 'cors' : 'same-origin',
                         headers: {
                             'Cache-Control': 'no-cache, no-store, must-revalidate',
                             'Pragma': 'no-cache',
@@ -553,35 +575,35 @@
                         }
                     });
                     
+                    clearTimeout(timeoutId);
+                    
                     if (response.ok) {
+                        console.log(`✅ Успех через ${source.name}`);
                         const petData = await response.json();
                         displayPetData(petData);
                         return; // Успешно загружено
                     }
                     
-                    // Если это не последняя попытка, ждем перед следующей
-                    if (attempt < maxRetries) {
-                        console.log(`Попытка ${attempt} неудачна (${response.status}), ждем ${delay}мс...`);
-                        updateLoadingText(`Попытка ${attempt} неудачна, повторяем через ${Math.round(delay/1000)} сек...`);
-                        await new Promise(resolve => setTimeout(resolve, delay));
-                        delay *= 1.5; // Увеличиваем задержку для следующей попытки
-                    }
+                    console.log(`❌ ${source.name}: HTTP ${response.status}`);
                     
                 } catch (error) {
-                    console.error(`Ошибка на попытке ${attempt}:`, error);
+                    console.log(`❌ ${source.name}: ${error.message}`);
                     
-                    // Если это не последняя попытка, ждем перед следующей
-                    if (attempt < maxRetries) {
-                        console.log(`Ждем ${delay}мс перед следующей попыткой...`);
-                        updateLoadingText(`Ошибка сети, повторяем через ${Math.round(delay/1000)} сек...`);
-                        await new Promise(resolve => setTimeout(resolve, delay));
-                        delay *= 1.5;
+                    if (error.name === 'AbortError') {
+                        updateLoadingText(`${source.name} - таймаут, пробуем следующий источник...`);
                     }
+                }
+                
+                // Пауза между источниками (кроме последнего)
+                if (i < sources.length - 1) {
+                    updateLoadingText(`Переключаемся на следующий источник через 1 сек...`);
+                    await new Promise(resolve => setTimeout(resolve, 1000));
                 }
             }
             
-            // Все попытки исчерпаны
-            showError('Не удалось загрузить данные питомца после нескольких попыток');
+            // Все источники исчерпаны
+            console.log('❌ Все источники недоступны');
+            showError('Данные питомца временно недоступны. Попробуйте через несколько минут.');
         }
 
         // Функция обновления прогресса загрузки
