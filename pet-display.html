@@ -6,6 +6,11 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
+    
+    <!-- Preload для ускорения загрузки -->
+    <link rel="preconnect" href="https://api.github.com">
+    <link rel="dns-prefetch" href="//raw.githubusercontent.com">
+    
     <title>🐕 Информация о питомце - Dog Trainer AI</title>
     <style>
         * {
@@ -427,7 +432,11 @@
     <div class="container">
         <div id="loading" class="loading">
             <div class="spinner"></div>
-            <p>Загрузка информации о питомце...</p>
+            <p id="loadingText">Загрузка информации о питомце...</p>
+            <div id="loadingProgress" style="display: none;">
+                <p>Попытка <span id="attemptNumber">1</span> из 3</p>
+                <small>Если файл только что создан, может потребоваться несколько секунд...</small>
+            </div>
         </div>
 
         <div id="error" class="error" style="display: none;">
@@ -509,32 +518,94 @@
 
         // Основная функция загрузки данных
         async function loadPetData() {
-            try {
-                const urlParams = new URLSearchParams(window.location.search);
-                const petId = urlParams.get('id') || window.location.pathname.split('/').pop().replace('.html', '');
-                
-                if (!petId || petId === 'pet-display') {
-                    throw new Error('Pet ID not found');
-                }
-
-                // Трекаем просмотр
-                trackView(petId);
-
-                // Загружаем данные питомца
-                const response = await fetch(`pets/${petId}.json`);
-                
-                if (!response.ok) {
-                    throw new Error('Pet data not found');
-                }
-
-                const petData = await response.json();
-                displayPetData(petData);
-
-            } catch (error) {
-                console.error('Error loading pet data:', error);
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('error').style.display = 'block';
+            const urlParams = new URLSearchParams(window.location.search);
+            const petId = urlParams.get('id') || window.location.pathname.split('/').pop().replace('.html', '');
+            
+            if (!petId || petId === 'pet-display') {
+                showError('Pet ID not found');
+                return;
             }
+
+            // Трекаем просмотр
+            trackView(petId);
+
+            // Загружаем данные с повторными попытками
+            await loadWithRetry(petId);
+        }
+
+        // Функция загрузки с повторными попытками
+        async function loadWithRetry(petId, maxRetries = 3, delay = 2000) {
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                try {
+                    console.log(`Попытка загрузки ${attempt}/${maxRetries} для ${petId}`);
+                    
+                    // Показываем прогресс
+                    updateLoadingProgress(attempt, maxRetries);
+                    
+                    // Добавляем timestamp для избежания кеширования
+                    const cacheBuster = `?v=${Date.now()}`;
+                    const response = await fetch(`pets/${petId}.json${cacheBuster}`, {
+                        cache: 'no-cache',
+                        headers: {
+                            'Cache-Control': 'no-cache, no-store, must-revalidate',
+                            'Pragma': 'no-cache',
+                            'Expires': '0'
+                        }
+                    });
+                    
+                    if (response.ok) {
+                        const petData = await response.json();
+                        displayPetData(petData);
+                        return; // Успешно загружено
+                    }
+                    
+                    // Если это не последняя попытка, ждем перед следующей
+                    if (attempt < maxRetries) {
+                        console.log(`Попытка ${attempt} неудачна (${response.status}), ждем ${delay}мс...`);
+                        updateLoadingText(`Попытка ${attempt} неудачна, повторяем через ${Math.round(delay/1000)} сек...`);
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        delay *= 1.5; // Увеличиваем задержку для следующей попытки
+                    }
+                    
+                } catch (error) {
+                    console.error(`Ошибка на попытке ${attempt}:`, error);
+                    
+                    // Если это не последняя попытка, ждем перед следующей
+                    if (attempt < maxRetries) {
+                        console.log(`Ждем ${delay}мс перед следующей попыткой...`);
+                        updateLoadingText(`Ошибка сети, повторяем через ${Math.round(delay/1000)} сек...`);
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        delay *= 1.5;
+                    }
+                }
+            }
+            
+            // Все попытки исчерпаны
+            showError('Не удалось загрузить данные питомца после нескольких попыток');
+        }
+
+        // Функция обновления прогресса загрузки
+        function updateLoadingProgress(attempt, maxRetries) {
+            const progressDiv = document.getElementById('loadingProgress');
+            const attemptSpan = document.getElementById('attemptNumber');
+            
+            if (attempt > 1) {
+                progressDiv.style.display = 'block';
+            }
+            attemptSpan.textContent = attempt;
+        }
+
+        // Функция обновления текста загрузки
+        function updateLoadingText(text) {
+            const loadingText = document.getElementById('loadingText');
+            loadingText.textContent = text;
+        }
+
+        // Функция показа ошибки
+        function showError(message) {
+            console.error('Error loading pet data:', message);
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('error').style.display = 'block';
         }
 
         // Функция отображения данных питомца
