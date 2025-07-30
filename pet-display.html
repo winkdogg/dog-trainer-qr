@@ -521,7 +521,7 @@
                 trackView(petId);
 
                 // Загружаем данные питомца
-                const response = await fetch(`https://raw.githubusercontent.com/winkdogg/petproject/main/pets/${petId}.json`);
+                const response = await fetch(`pets/${petId}.json`);
                 
                 if (!response.ok) {
                     throw new Error('Pet data not found');
